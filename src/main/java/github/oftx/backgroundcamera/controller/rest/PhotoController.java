@@ -8,6 +8,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+// MODIFIED: Import for security
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,19 +27,26 @@ public class PhotoController {
         this.photoService = photoService;
     }
 
+    // MODIFIED: Method signature updated to include Principal for authorization
     @PostMapping("/upload")
     public ResponseEntity<PhotoDto> uploadPhoto(
             @RequestParam("file") MultipartFile file,
             @RequestParam("deviceId") String deviceId,
-            @RequestParam("timestamp") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant timestamp) {
-        
-        // TODO: This endpoint should also be secured, probably via a device-specific API key/token
-        // For now, it's left as-is from the original implementation for simplicity.
+            @RequestParam("timestamp") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant timestamp,
+            Principal principal) {
+
+        // MODIFIED: CRITICAL authorization check
+        // The principal.getName() is the deviceId, authenticated by DeviceTokenAuthFilter
+        if (principal == null || !principal.getName().equals(deviceId)) {
+            throw new AccessDeniedException("The authenticated device is not authorized to upload photos for deviceId: " + deviceId);
+        }
+
         String originalFileName = Objects.requireNonNullElse(file.getOriginalFilename(), "upload-" + Instant.now().toEpochMilli());
         PhotoDto savedPhoto = photoService.savePhoto(file, deviceId, timestamp, originalFileName);
         return new ResponseEntity<>(savedPhoto, HttpStatus.CREATED);
     }
 
+    // ... (rest of the file is unchanged) ...
     @GetMapping("/{deviceId}")
     public ResponseEntity<Page<PhotoDto>> getPhotosByDevice(
             @PathVariable String deviceId,
@@ -45,7 +54,7 @@ public class PhotoController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant endDate,
             @PageableDefault(size = 20, sort = "capturedAt") Pageable pageable,
             Principal principal) {
-        
+
         Page<PhotoDto> photos = photoService.findPhotosByDeviceId(deviceId, startDate, endDate, pageable, principal.getName());
         return ResponseEntity.ok(photos);
     }

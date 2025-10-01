@@ -16,6 +16,10 @@ public class Device {
 
     private String name;
 
+    // NEW: Field to store the hashed device-specific authentication token
+    @Column(length = 100)
+    private String authTokenHash;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -28,4 +32,8 @@ public class Device {
     public void setName(String name) { this.name = name; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    // NEW: Getter and Setter for the auth token hash
+    public String getAuthTokenHash() { return authTokenHash; }
+    public void setAuthTokenHash(String authTokenHash) { this.authTokenHash = authTokenHash; }
 }
