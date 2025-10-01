@@ -7,7 +7,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-// MODIFIED: Import for method security
 import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -21,41 +20,37 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
-// NEW: Enable method-level security for @PreAuthorize
 @EnableGlobalMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
-    private final JwtAuthFilter jwtAuthFilter;
     private final UserRepository userRepository;
-    // NEW: Inject the new device token filter
-    private final DeviceTokenAuthFilter deviceTokenAuthFilter;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, UserRepository userRepository, DeviceTokenAuthFilter deviceTokenAuthFilter) {
-        this.jwtAuthFilter = jwtAuthFilter;
+    public SecurityConfig(UserRepository userRepository) {
         this.userRepository = userRepository;
-        // NEW: Assign the injected filter
-        this.deviceTokenAuthFilter = deviceTokenAuthFilter;
     }
 
+    // 【最终修复】修改了 Filter 的添加顺序
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   JwtAuthFilter jwtAuthFilter,
+                                                   DeviceTokenAuthFilter deviceTokenAuthFilter) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // MODIFIED: Keep /ws/** open at HTTP level; auth is handled by the interceptor
                         .requestMatchers("/api/auth/**", "/ws/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
-                // MODIFIED: Add the DeviceTokenAuthFilter BEFORE the JwtAuthFilter
-                .addFilterBefore(deviceTokenAuthFilter, JwtAuthFilter.class)
+
+                // 【最终修复】确保两个自定义Filter都相对于内置Filter进行定位
+                // 并且按照正确的执行顺序添加
+                .addFilterBefore(deviceTokenAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ... rest of the file is unchanged ...
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
