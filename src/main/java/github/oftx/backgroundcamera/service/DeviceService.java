@@ -28,8 +28,15 @@ public class DeviceService {
 
     @Transactional
     public DeviceBindingResponseDto bindDeviceToUser(String deviceId, String username) {
+        // 【修复】如果设备不存在，则创建一个新设备，而不是抛出异常
         Device device = deviceRepository.findById(deviceId)
-                .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
+                .orElseGet(() -> {
+                    Device newDevice = new Device();
+                    newDevice.setId(deviceId);
+                    newDevice.setName("New Device (Bound via API)"); // 设置一个默认名称
+                    // createdAt 由实体中的 @PrePersist 或默认值自动设置
+                    return newDevice;
+                });
 
         if (device.getUser() != null) {
             throw new IllegalStateException("Device is already bound to a user.");
