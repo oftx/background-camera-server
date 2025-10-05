@@ -14,9 +14,10 @@ public class Device {
     @JoinColumn(name = "user_id")
     private User user;
 
-    private String name;
+    // 【修改】确保name字段非空，并提供一个默认值
+    @Column(nullable = false)
+    private String name = "New Device";
 
-    // NEW: Field to store the hashed device-specific authentication token
     @Column(length = 100)
     private String authTokenHash;
 
@@ -32,8 +33,6 @@ public class Device {
     public void setName(String name) { this.name = name; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-
-    // NEW: Getter and Setter for the auth token hash
     public String getAuthTokenHash() { return authTokenHash; }
     public void setAuthTokenHash(String authTokenHash) { this.authTokenHash = authTokenHash; }
 }

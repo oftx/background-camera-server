@@ -7,12 +7,14 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDate; // 【修复】确保导入
+import java.time.LocalDate;
 import java.time.Year;
+import java.util.UUID;
 
 @Service
 public class LocalStorageService implements StorageService {
@@ -30,15 +32,16 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public String storeFile(MultipartFile file, String deviceId, String originalFileName) {
-        String fileName = StringUtils.cleanPath(originalFileName);
+        // 【修改】文件名不再使用原始文件名，而是生成一个唯一的UUID来防止冲突
+        String extension = StringUtils.getFilenameExtension(originalFileName);
+        String uniqueFileName = UUID.randomUUID() + (extension != null ? "." + extension : "");
 
-        if (fileName.contains("..")) {
-            throw new StorageException("Filename contains invalid path sequence " + fileName);
+        if (uniqueFileName.contains("..")) {
+            throw new StorageException("Filename contains invalid path sequence " + uniqueFileName);
         }
 
-        try {
+        try (InputStream inputStream = file.getInputStream()) {
             String year = String.valueOf(Year.now().getValue());
-            // 【修复】使用 LocalDate.now().getMonthValue() 获取月份数字
             String month = String.format("%02d", LocalDate.now().getMonthValue());
 
             Path deviceDir = this.storageBasePath.resolve(deviceId);
@@ -46,14 +49,15 @@ public class LocalStorageService implements StorageService {
             Path monthDir = yearDir.resolve(month);
             Files.createDirectories(monthDir);
 
-            Path targetLocation = monthDir.resolve(fileName);
-            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+            Path targetLocation = monthDir.resolve(uniqueFileName);
+            // 这里不再需要 REPLACE_EXISTING，因为文件名总是唯一的，但保留也无妨
+            Files.copy(inputStream, targetLocation, StandardCopyOption.REPLACE_EXISTING);
 
-            Path relativePath = Paths.get(deviceId, year, month, fileName);
+            Path relativePath = Paths.get(deviceId, year, month, uniqueFileName);
             return relativePath.toString().replace("\\", "/");
 
         } catch (IOException ex) {
-            throw new StorageException("Failed to store file " + fileName, ex);
+            throw new StorageException("Failed to store file " + uniqueFileName, ex);
         }
     }
 }
