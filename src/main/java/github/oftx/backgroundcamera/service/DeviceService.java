@@ -23,13 +23,13 @@ public class DeviceService {
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final WebSocketSessionManager webSocketSessionManager; // 【新增】
+    private final WebSocketSessionManager webSocketSessionManager;
 
     public DeviceService(DeviceRepository deviceRepository, UserRepository userRepository, PasswordEncoder passwordEncoder, WebSocketSessionManager webSocketSessionManager) {
         this.deviceRepository = deviceRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.webSocketSessionManager = webSocketSessionManager; // 【新增】
+        this.webSocketSessionManager = webSocketSessionManager;
     }
 
     @Transactional
@@ -38,17 +38,14 @@ public class DeviceService {
                 .orElseGet(() -> {
                     Device newDevice = new Device();
                     newDevice.setId(deviceId);
-                    newDevice.setName("Device " + deviceId.substring(0, 6)); // 设置一个更具识别性的默认名称
+                    newDevice.setName("Device " + deviceId.substring(0, 6));
                     return newDevice;
                 });
 
-        // 【修改】实现幂等绑定逻辑
-        // 检查设备是否已绑定到 *另一个* 用户
         if (device.getUser() != null && !device.getUser().getUsername().equals(username)) {
             throw new IllegalStateException("Device is already bound to another user.");
         }
 
-        // 如果设备未绑定，或已绑定到当前用户，都继续执行绑定/重新绑定流程
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
 
@@ -62,13 +59,11 @@ public class DeviceService {
         return new DeviceBindingResponseDto(deviceId, authToken);
     }
 
-    // 【新增】解绑设备
     @Transactional
     public void unbindDevice(String deviceId, String username) {
         Device device = deviceRepository.findById(deviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
 
-        // 安全检查：确保只有设备所有者才能解绑
         if (device.getUser() == null || !device.getUser().getUsername().equals(username)) {
             throw new AccessDeniedException("You are not authorized to unbind this device.");
         }
@@ -78,7 +73,6 @@ public class DeviceService {
         deviceRepository.save(device);
     }
 
-    // 【新增】获取用户的所有设备列表
     @Transactional(readOnly = true)
     public List<DeviceDto> findDevicesByUsername(String username) {
         List<Device> devices = deviceRepository.findByUser_Username(username);
@@ -89,6 +83,30 @@ public class DeviceService {
                         webSocketSessionManager.isDeviceOnline(device.getId())
                 ))
                 .collect(Collectors.toList());
+    }
+
+    // 【新增】更新设备名称的方法
+    @Transactional
+    public DeviceDto updateDeviceName(String deviceId, String newName, String username) {
+        // 1. 查找设备
+        Device device = deviceRepository.findById(deviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
+
+        // 2. 严格的权限校验：确保只有设备所有者才能修改
+        if (device.getUser() == null || !device.getUser().getUsername().equals(username)) {
+            throw new AccessDeniedException("You are not authorized to modify this device.");
+        }
+
+        // 3. 更新名称并保存
+        device.setName(newName);
+        Device updatedDevice = deviceRepository.save(device);
+
+        // 4. 返回更新后的DTO
+        return new DeviceDto(
+                updatedDevice.getId(),
+                updatedDevice.getName(),
+                webSocketSessionManager.isDeviceOnline(updatedDevice.getId())
+        );
     }
 
     private String generateNewAuthToken() {

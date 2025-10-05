@@ -2,7 +2,9 @@ package github.oftx.backgroundcamera.controller.rest;
 
 import github.oftx.backgroundcamera.dto.DeviceBindingResponseDto;
 import github.oftx.backgroundcamera.dto.DeviceDto;
+import github.oftx.backgroundcamera.dto.UpdateDeviceNameRequestDto; // 【新增】导入
 import github.oftx.backgroundcamera.service.DeviceService;
+import jakarta.validation.Valid; // 【新增】导入
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +21,6 @@ public class DeviceController {
         this.deviceService = deviceService;
     }
 
-    // 【新增】获取当前用户绑定的所有设备列表
     @GetMapping
     public ResponseEntity<List<DeviceDto>> getDevices(Principal principal) {
         String username = principal.getName();
@@ -36,14 +37,23 @@ public class DeviceController {
         return ResponseEntity.ok(response);
     }
 
-    // 【新增】解绑指定设备
     @PostMapping("/{deviceId}/unbind")
     public ResponseEntity<Void> unbindDevice(
             @PathVariable String deviceId,
             Principal principal) {
         String username = principal.getName();
         deviceService.unbindDevice(deviceId, username);
-        // HTTP 204 No Content 是表示成功执行无返回内容的操作的理想状态码
         return ResponseEntity.noContent().build();
+    }
+
+    // 【新增】更新设备名称的API端点
+    @PatchMapping("/{deviceId}")
+    public ResponseEntity<DeviceDto> updateDeviceName(
+            @PathVariable String deviceId,
+            @RequestBody @Valid UpdateDeviceNameRequestDto request,
+            Principal principal) {
+        String username = principal.getName();
+        DeviceDto updatedDevice = deviceService.updateDeviceName(deviceId, request.getName(), username);
+        return ResponseEntity.ok(updatedDevice);
     }
 }
