@@ -2,9 +2,9 @@ package github.oftx.backgroundcamera.controller.rest;
 
 import github.oftx.backgroundcamera.dto.DeviceBindingResponseDto;
 import github.oftx.backgroundcamera.dto.DeviceDto;
-import github.oftx.backgroundcamera.dto.UpdateDeviceNameRequestDto; // 【新增】导入
+import github.oftx.backgroundcamera.dto.UpdateDeviceNameRequestDto;
 import github.oftx.backgroundcamera.service.DeviceService;
-import jakarta.validation.Valid; // 【新增】导入
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +28,16 @@ public class DeviceController {
         return ResponseEntity.ok(devices);
     }
 
+    // 【新增】获取单个设备详情的API端点
+    @GetMapping("/{deviceId}")
+    public ResponseEntity<DeviceDto> getDeviceById(
+            @PathVariable String deviceId,
+            Principal principal) {
+        String username = principal.getName();
+        DeviceDto deviceDetails = deviceService.getDeviceDetails(deviceId, username);
+        return ResponseEntity.ok(deviceDetails);
+    }
+
     @PostMapping("/{deviceId}/bind")
     public ResponseEntity<DeviceBindingResponseDto> bindDevice(
             @PathVariable String deviceId,
@@ -46,7 +56,6 @@ public class DeviceController {
         return ResponseEntity.noContent().build();
     }
 
-    // 【新增】更新设备名称的API端点
     @PatchMapping("/{deviceId}")
     public ResponseEntity<DeviceDto> updateDeviceName(
             @PathVariable String deviceId,

@@ -85,27 +85,42 @@ public class DeviceService {
                 .collect(Collectors.toList());
     }
 
-    // 【新增】更新设备名称的方法
     @Transactional
     public DeviceDto updateDeviceName(String deviceId, String newName, String username) {
-        // 1. 查找设备
         Device device = deviceRepository.findById(deviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
 
-        // 2. 严格的权限校验：确保只有设备所有者才能修改
         if (device.getUser() == null || !device.getUser().getUsername().equals(username)) {
             throw new AccessDeniedException("You are not authorized to modify this device.");
         }
 
-        // 3. 更新名称并保存
         device.setName(newName);
         Device updatedDevice = deviceRepository.save(device);
 
-        // 4. 返回更新后的DTO
         return new DeviceDto(
                 updatedDevice.getId(),
                 updatedDevice.getName(),
                 webSocketSessionManager.isDeviceOnline(updatedDevice.getId())
+        );
+    }
+
+    // 【新增】获取单个设备详情的方法
+    @Transactional(readOnly = true)
+    public DeviceDto getDeviceDetails(String deviceId, String username) {
+        // 1. 查找设备
+        Device device = deviceRepository.findById(deviceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
+
+        // 2. 权限校验：确保请求者是设备的所有者
+        if (device.getUser() == null || !device.getUser().getUsername().equals(username)) {
+            throw new AccessDeniedException("You are not authorized to view this device's details.");
+        }
+
+        // 3. 将实体映射为DTO并返回
+        return new DeviceDto(
+                device.getId(),
+                device.getName(),
+                webSocketSessionManager.isDeviceOnline(device.getId())
         );
     }
 
