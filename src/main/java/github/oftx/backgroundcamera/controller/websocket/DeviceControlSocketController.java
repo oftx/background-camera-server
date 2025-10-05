@@ -14,10 +14,10 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-// MODIFIED: Import for security
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 
+import java.security.Principal; // 【新增】导入
 import java.time.Instant;
 
 @Controller
@@ -37,7 +37,6 @@ public class DeviceControlSocketController {
 
     @MessageMapping("/device/register")
     public void registerDevice(@Payload @Valid DeviceRegistrationDto payload, StompHeaderAccessor headerAccessor) {
-        // ... (unchanged)
         String deviceId = payload.getDeviceId();
         String sessionId = headerAccessor.getSessionId();
         log.info("Device trying to register: {}", deviceId);
@@ -47,7 +46,8 @@ public class DeviceControlSocketController {
         if (!deviceRepository.existsById(deviceId)) {
             Device newDevice = new Device();
             newDevice.setId(deviceId);
-            newDevice.setName("New Device");
+            // 使用之前定义的默认名称
+            // newDevice.setName("New Device");
             newDevice.setCreatedAt(Instant.now());
             deviceRepository.save(newDevice);
             log.info("New device created and saved: {}", deviceId);
@@ -56,7 +56,6 @@ public class DeviceControlSocketController {
         }
     }
 
-    // MODIFIED: Added security annotation
     @MessageMapping("/device/command/{deviceId}")
     @PreAuthorize("@deviceSecurityService.canControlDevice(principal.username, #deviceId)")
     public void receiveCommand(@DestinationVariable String deviceId, @Payload CommandPayloadDto command) {
@@ -64,11 +63,17 @@ public class DeviceControlSocketController {
         messagingTemplate.convertAndSend("/queue/device/command/" + deviceId, command);
     }
 
-    // MODIFIED: Added security annotation
+    // 【修改】移除了@PreAuthorize注解，并添加了Principal参数和手动的安全检查
     @MessageMapping("/device/status")
-    @PreAuthorize("principal.name == #statusUpdate.deviceId")
-    public void onDeviceStatusUpdate(@Payload DeviceStatusUpdateDto statusUpdate) {
-        // This check ensures that only a principal authenticated as a specific deviceId can send a status update for that same deviceId.
+    public void onDeviceStatusUpdate(@Payload DeviceStatusUpdateDto statusUpdate, Principal principal) {
+        // Principal 由我们的 DeviceTokenChannelInterceptor 设置，principal.getName() 返回 deviceId
+        if (principal == null || !principal.getName().equals(statusUpdate.getDeviceId())) {
+            log.warn("Unauthorized status update attempt. Authenticated principal '{}' tried to update status for device '{}'.",
+                    (principal != null ? principal.getName() : "null"), statusUpdate.getDeviceId());
+            return; // 拒绝处理
+        }
+
+        // 安全检查通过后，继续执行业务逻辑
         String deviceId = statusUpdate.getDeviceId();
         log.info("Status update from authenticated device {}: {}", deviceId, statusUpdate.getStatus());
         messagingTemplate.convertAndSend("/topic/device/status/" + deviceId, statusUpdate.getStatus());
