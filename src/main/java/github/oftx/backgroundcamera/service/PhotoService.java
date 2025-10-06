@@ -7,8 +7,11 @@ import github.oftx.backgroundcamera.exception.ResourceNotFoundException;
 import github.oftx.backgroundcamera.exception.StorageException;
 import github.oftx.backgroundcamera.repository.DeviceRepository;
 import github.oftx.backgroundcamera.repository.PhotoRepository;
+import org.slf4j.Logger; // <-- 1. 导入 Logger
+import org.slf4j.LoggerFactory; // <-- 1. 导入 LoggerFactory
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate; // <-- 2. 导入 SimpMessagingTemplate
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -25,14 +28,19 @@ import java.util.UUID;
 @Service
 public class PhotoService {
 
+    private static final Logger log = LoggerFactory.getLogger(PhotoService.class); // <-- 1. 添加 Logger
+
     private final PhotoRepository photoRepository;
     private final DeviceRepository deviceRepository;
     private final StorageService storageService;
+    private final SimpMessagingTemplate messagingTemplate; // <-- 3. 添加成员变量
 
-    public PhotoService(PhotoRepository photoRepository, DeviceRepository deviceRepository, StorageService storageService) {
+    // <-- 4. 修改构造函数以注入 SimpMessagingTemplate
+    public PhotoService(PhotoRepository photoRepository, DeviceRepository deviceRepository, StorageService storageService, SimpMessagingTemplate messagingTemplate) {
         this.photoRepository = photoRepository;
         this.deviceRepository = deviceRepository;
         this.storageService = storageService;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @Transactional
@@ -40,7 +48,6 @@ public class PhotoService {
         Device device = deviceRepository.findById(deviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found with id: " + deviceId));
 
-        // 【新增】1. 计算文件的SHA-256哈希值
         String sha256Hash;
         try {
             sha256Hash = calculateSha256(file);
@@ -48,7 +55,6 @@ public class PhotoService {
             throw new StorageException("Failed to calculate file hash", e);
         }
 
-        // 【新增】2. 检查该哈希值是否已存在于数据库 (文件去重)
         Optional<Photo> existingPhotoOpt = photoRepository.findFirstBySha256Hash(sha256Hash);
 
         Photo photoToSave = new Photo();
@@ -61,12 +67,10 @@ public class PhotoService {
         photoToSave.setSha256Hash(sha256Hash);
 
         if (existingPhotoOpt.isPresent()) {
-            // 【新增】3a. 如果文件已存在，则复用现有文件的路径和URL
             Photo existingPhoto = existingPhotoOpt.get();
             photoToSave.setFilePath(existingPhoto.getFilePath());
             photoToSave.setFileUrl(existingPhoto.getFileUrl());
         } else {
-            // 【新增】3b. 如果是新文件，则存储它并生成新的路径和URL
             String relativePath = storageService.storeFile(file, deviceId, originalFileName);
             photoToSave.setFilePath(relativePath);
             String fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
@@ -76,13 +80,19 @@ public class PhotoService {
             photoToSave.setFileUrl(fileUrl);
         }
 
-        // 4. 保存代表本次上传事件的Photo记录到数据库
         Photo savedPhoto = photoRepository.save(photoToSave);
 
-        return new PhotoDto(savedPhoto.getId(), deviceId, savedPhoto.getFileUrl(), savedPhoto.getCapturedAt());
+        PhotoDto photoDto = new PhotoDto(savedPhoto.getId(), deviceId, savedPhoto.getFileUrl(), savedPhoto.getCapturedAt());
+
+        // --- FIX START: 广播新照片通知 ---
+        String destination = "/topic/photos/new/" + deviceId;
+        messagingTemplate.convertAndSend(destination, photoDto);
+        log.info("Broadcast new photo notification to {}: photoId={}", destination, photoDto.getPhotoId());
+        // --- FIX END ---
+
+        return photoDto;
     }
 
-    // 【新增】用于计算文件SHA-256哈希值的辅助方法
     private String calculateSha256(MultipartFile file) throws NoSuchAlgorithmException, IOException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream is = file.getInputStream()) {
